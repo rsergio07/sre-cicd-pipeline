@@ -284,7 +284,16 @@ git push origin main
 
 ## Phase 1: Basic Pipeline Foundation
 
-In this phase, you will create the core CI pipeline that runs tests and quality checks every time code is pushed. This ensures the application is healthy before deploying to any environment.
+In this phase, you will create the core CI pipeline that runs **unit tests** and **code quality checks** every time code is pushed. This is your first reliability gate — it ensures that broken or non-compliant code **never reaches your main branch**.
+
+This early automation step helps you:
+
+* Catch issues as soon as they happen (shift-left testing)
+* Enforce consistent style and clean code practices across teams
+* Prevent bugs from progressing to more expensive stages (e.g., staging or production)
+* Build trust in every commit as part of a healthy software delivery lifecycle
+
+As an SRE, these gates are the first signal that your system is behaving as expected before deployment even begins.
 
 ### **Step 1: Create the GitHub Actions Workflow File**
 
@@ -363,7 +372,54 @@ git commit -m "Add basic CI pipeline with tests"
 git push origin main
 ```
 
-Go to the **Actions** tab in your GitHub repository to verify that the workflow is triggered and passes successfully.
+Go to the **Actions** tab in your GitHub repository to verify that the workflow is triggered.
+
+### Intentional First Failure: Code Formatting
+
+> 🔥 The first time you push, the pipeline will likely **fail on the `black --check .` step**.
+
+This is intentional.
+
+The purpose of this check is to prevent non-compliant code from entering `main`. It teaches you to:
+
+* Observe CI feedback
+* Fix issues locally
+* Re-commit clean code
+
+You’ll likely see a message like:
+
+```bash
+would reformat app.py
+would reformat test_app.py
+
+Oh no! 💥 💔 💥
+2 files would be reformatted.
+```
+
+To fix it:
+
+```bash
+cd app
+black .
+```
+
+This command runs [**Black**](https://black.readthedocs.io/en/stable/), a Python code formatter that automatically rewrites your code to follow a strict style guide.
+
+* `black` is the tool
+* `.` tells it to format **all Python files in the current directory**
+* It modifies your code in place to make it compliant
+
+After running the command, your files will be updated automatically.
+
+Then re-commit and push the changes:
+
+```bash
+git add .
+git commit -m "Fix formatting to pass Black check"
+git push origin main
+```
+
+Once pushed, the pipeline should now pass.
 
 ---
 
