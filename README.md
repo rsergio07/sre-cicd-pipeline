@@ -202,15 +202,6 @@ if __name__ == "__main__":
 EOF
 ```
 
-> This app doesn't serve a homepage (`/`) or favicon, so you should not open it in a browser.
-> You should **run the curl commands** manually to test the API.
-> Example:
-
-  ```bash
-  curl http://localhost:8080/health
-  curl http://localhost:8080/api/data
-  ```
-
 #### Update `app/requirements.txt`
 
 Next, create the file that lists your Python dependencies:
@@ -268,11 +259,14 @@ python -m pytest
 python app.py
 ```
 
-In a separate terminal:
+> This app doesn't serve a homepage (`/`) or favicon, so you should not open it in a browser.
+> You should **run the curl commands** manually to test the API.
+> Example:
 
-```bash
-curl http://localhost:8080/health
-```
+  ```bash
+  curl http://localhost:8080/health
+  curl http://localhost:8080/api/data
+  ```
 
 You should receive a JSON response indicating the app is healthy.
 
