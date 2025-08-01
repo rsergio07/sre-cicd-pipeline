@@ -487,38 +487,87 @@ chmod +x scripts/evaluate-security.py
 
 Now update the `.github/workflows/ci-cd.yml` file to include a new job called `security-scan`. This job runs only after the `test` job completes successfully.
 
+Replace the entire file with the code below:
+
 ```yaml
+name: SRE Production Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  test:
+    name: Run Tests and Quality Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          cd app
+          pip install -r requirements.txt
+          pip install pytest-cov black flake8
+
+      - name: Code formatting check
+        run: |
+          cd app
+          black --check .
+
+      - name: Linting
+        run: |
+          cd app
+          flake8 . --max-line-length=100
+
+      - name: Run unit tests
+        run: |
+          cd app
+          pytest --cov=. --cov-report=xml --cov-report=term
+
   security-scan:
     name: Security Analysis
     runs-on: ubuntu-latest
     needs: test
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-    - name: Install security tools
-      run: |
-        pip install safety bandit
+      - name: Install security tools
+        run: |
+          pip install safety bandit
 
-    - name: Check for known vulnerabilities
-      run: |
-        cd app
-        safety check -r requirements.txt --json > safety-report.json || true
+      - name: Check for known vulnerabilities
+        run: |
+          cd app
+          safety check -r requirements.txt --json > safety-report.json || true
 
-    - name: Static security analysis
-      run: |
-        cd app
-        bandit -r . -f json -o bandit-report.json || true
+      - name: Static security analysis
+        run: |
+          cd app
+          bandit -r . -f json -o bandit-report.json || true
 
-    - name: Evaluate security results
-      run: |
-        python scripts/evaluate-security.py
+      - name: Evaluate security results
+        run: |
+          python scripts/evaluate-security.py
 ```
 
 💡 `|| true` allows the pipeline to continue even if the scanner exits with a non-zero code. The results will be handled and evaluated by the `evaluate-security.py` script.
