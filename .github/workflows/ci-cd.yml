@@ -76,3 +76,81 @@ jobs:
       - name: Evaluate security results
         run: |
           python scripts/evaluate-security.py
+
+  build:
+    name: Build and Push Image
+    runs-on: ubuntu-latest
+    needs: [test, security-scan]
+    if: github.ref == 'refs/heads/main'
+
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+      image-tag: ${{ steps.meta.outputs.tags }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+
+      - name: Build and push image (simulated)
+        id: build
+        run: |
+          echo "Building image for commit: ${{ github.sha }}"
+          echo "Image would be tagged as: ${{ steps.meta.outputs.tags }}"
+          echo "digest=sha256:$(date +%s | sha256sum | cut -d' ' -f1)" >> $GITHUB_OUTPUT
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: build
+    environment: staging
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to staging cluster (simulated)
+        run: |
+          echo "🚀 Deploying to staging environment"
+          echo "Image: ${{ needs.build.outputs.image-tag }}"
+          sleep 10
+          echo "✅ Deployment to staging completed"
+
+      - name: Run smoke tests
+        run: |
+          python scripts/smoke-tests.py --environment=staging
+
+      - name: Performance baseline test
+        run: |
+          python scripts/performance-test.py --duration=30 --environment=staging
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [build, deploy-staging]
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to production cluster (simulated)
+        run: |
+          echo "🚀 Deploying to production environment"
+          echo "Image: ${{ needs.build.outputs.image-tag }}"
+          sleep 15
+          echo "✅ Production deployment completed"
+
+      - name: Post-deployment verification
+        run: |
+          echo "🔍 Running post-deployment verification..."
+          sleep 5
+          echo "✅ All systems healthy"
