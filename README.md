@@ -160,17 +160,15 @@ git push --force origin main
 
 ### **Step 2: Update Application Code and Dependencies**
 
-Now that your repo is initialized, let’s update the application and prepare it for testing.
+Now that your repository is initialized, let’s update the application and prepare it for testing.
 
-#### Fix and Update `app/app.py`
+### Update `app/app.py`
 
-There is a deliberate syntax error in the starter code that you need to fix. You’ll also replace the content with a version that includes health and data endpoints:
+Replace the default content with a production-friendly version that includes two endpoints (`/health` and `/api/data`) and prints clear instructions to the terminal when running locally.
+
+Run the following command to overwrite `app.py`:
 
 ```bash
-# Fix the syntax error in app.py
-sed -i 's/**name**/__name__/g' app/app.py
-
-# Replace the content with the SRE-friendly version
 cat <<EOF > app/app.py
 from flask import Flask, jsonify
 import os
@@ -195,9 +193,23 @@ def get_data():
     })
 
 if __name__ == "__main__":
+    print("Flask app initialized.")
+    print("To test the app, run the following commands in a separate terminal:")
+    print("  curl http://localhost:8080/health")
+    print("  curl http://localhost:8080/api/data")
+    print("Then press Ctrl+C to exit.")
     app.run(host='0.0.0.0', port=8080)
 EOF
 ```
+
+> This app doesn't serve a homepage (`/`) or favicon, so you should not open it in a browser.
+> You should **run the curl commands** manually to test the API.
+> Example:
+
+  ```bash
+  curl http://localhost:8080/health
+  curl http://localhost:8080/api/data
+  ```
 
 #### Update `app/requirements.txt`
 
