@@ -12,7 +12,6 @@
 * [Phase 3: Multi-Environment Deployment](#phase-3-multi-environment-deployment)
 * [Phase 4: Observability and Monitoring](#phase-4-observability-and-monitoring)
 * [Phase 5: Failure Simulation and Recovery](#phase-5-failure-simulation-and-recovery)
-* [Final Validation and Submission](#final-validation-and-submission)
 * [Real-World Extensions and SRE Metrics](#real-world-extensions-and-sre-metrics)
 * [Reflection Questions](#reflection-questions)
 * [Next Steps](#next-steps)
@@ -1214,13 +1213,19 @@ You’ve introduced the foundation for:
 
 ## Phase 5: Failure Simulation and Recovery
 
-SREs plan for failure. This phase focuses on handling and recovering from failed deployments.
+Failure is inevitable. As an SRE, your job is to plan for it and recover gracefully.
 
-You’ll add a rollback mechanism to your pipeline that gets triggered only if the `deploy-production` job fails.
+In this phase, you’ll simulate a **production failure** and implement an **automated rollback mechanism**. If the production deployment job (`deploy-production`) fails, a new job (`automated-rollback`) will trigger and restore a previous version.
 
-### **Step 1: Create a Rollback Script**
+This is the final phase that completes a reliable, resilient CI/CD pipeline.
 
-This script simulates rolling back to the previous version of the application:
+---
+
+### **Step 1: Create the Rollback Script**
+
+You’ll begin by creating a script called `rollback.py`. This simulates identifying the last known good version of the application and rolling back to it.
+
+Like before, we’ll use a `cat <<EOF` block to avoid indentation errors.
 
 ```bash
 cat <<EOF > scripts/rollback.py
@@ -1250,11 +1255,193 @@ EOF
 chmod +x scripts/rollback.py
 ```
 
+This script will later be invoked automatically by GitHub Actions if your production deployment fails.
+
+---
+
 ### **Step 2: Add the Rollback Job to Your Workflow**
 
-Append a new job to `.github/workflows/ci-cd.yml` that only runs if `deploy-production` fails:
+Now you’ll add a job to `.github/workflows/ci-cd.yml` called `automated-rollback`. This job runs only when `deploy-production` fails. It simulates an emergency recovery procedure.
 
-```yaml
+To avoid YAML indentation errors, use this command to regenerate the full workflow file (with rollback logic included):
+
+```bash
+cat <<EOF > .github/workflows/ci-cd.yml
+name: SRE Production Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: \${{ github.repository }}
+
+jobs:
+  test:
+    name: Run Tests and Quality Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          cd app
+          pip install -r requirements.txt
+          pip install pytest-cov black flake8
+
+      - name: Code formatting check
+        run: |
+          cd app
+          black --check .
+
+      - name: Linting
+        run: |
+          cd app
+          flake8 . --max-line-length=100
+
+      - name: Run unit tests
+        run: |
+          cd app
+          pytest --cov=. --cov-report=xml --cov-report=term
+
+  security-scan:
+    name: Security Analysis
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install security tools
+        run: |
+          pip install safety bandit
+
+      - name: Check for known vulnerabilities
+        run: |
+          cd app
+          safety check -r requirements.txt --json > safety-report.json || true
+
+      - name: Static security analysis
+        run: |
+          cd app
+          bandit -r . -f json -o bandit-report.json || true
+
+      - name: Evaluate security results
+        run: |
+          python scripts/evaluate-security.py
+
+  build:
+    name: Build and Push Image
+    runs-on: ubuntu-latest
+    needs: [test, security-scan]
+    if: github.ref == 'refs/heads/main'
+
+    outputs:
+      image-digest: \${{ steps.build.outputs.digest }}
+      image-tag: \${{ steps.meta.outputs.tags }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: \${{ env.REGISTRY }}/\${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+
+      - name: Build and push image (simulated)
+        id: build
+        run: |
+          echo "Building image for commit: \${{ github.sha }}"
+          echo "Image would be tagged as: \${{ steps.meta.outputs.tags }}"
+          echo "digest=sha256:\$(date +%s | sha256sum | cut -d' ' -f1)" >> \$GITHUB_OUTPUT
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: build
+    environment: staging
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to staging cluster (simulated)
+        run: |
+          echo "🚀 Deploying to staging environment"
+          echo "Image: \${{ needs.build.outputs.image-tag }}"
+          sleep 10
+          echo "✅ Deployment to staging completed"
+
+      - name: Run smoke tests
+        run: |
+          python scripts/smoke-tests.py --environment=staging
+
+      - name: Performance baseline test
+        run: |
+          python scripts/performance-test.py --duration=30 --environment=staging
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [build, deploy-staging]
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to production cluster (simulated)
+        run: |
+          echo "🚀 Deploying to production environment"
+          echo "Image: \${{ needs.build.outputs.image-tag }}"
+          sleep 15
+          echo "✅ Production deployment completed"
+
+      - name: Post-deployment verification
+        run: |
+          echo "🔍 Running post-deployment verification..."
+          sleep 5
+          echo "✅ All systems healthy"
+
+  slo-check:
+    name: Verify SLOs
+    runs-on: ubuntu-latest
+    needs: deploy-production
+    if: always()
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check Service Level Objectives
+        run: |
+          python scripts/slo-check.py \
+            --environment=production \
+            --window=15min \
+            --availability-target=99.9 \
+            --latency-target=200
+
   automated-rollback:
     name: Automated Rollback
     runs-on: ubuntu-latest
@@ -1262,26 +1449,31 @@ Append a new job to `.github/workflows/ci-cd.yml` that only runs if `deploy-prod
     if: failure()
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Trigger rollback
-      run: |
-        echo "❌ Production deployment failed, initiating rollback"
-        python scripts/rollback.py \
-          --environment=production \
-          --reason="Failed deployment: ${{ github.sha }}"
+      - name: Trigger rollback
+        run: |
+          echo "❌ Production deployment failed, initiating rollback"
+          python scripts/rollback.py \
+            --environment=production \
+            --reason="Failed deployment: \${{ github.sha }}"
 
-    - name: Verify rollback success
-      run: |
-        echo "🔍 Verifying rollback success..."
-        sleep 5
-        echo "✅ Rollback verification completed"
+      - name: Verify rollback success
+        run: |
+          echo "🔍 Verifying rollback success..."
+          sleep 5
+          echo "✅ Rollback verification completed"
+EOF
 ```
 
-### **Step 3: Simulate a Failure**
+This ensures that rollbacks only run when a production release is broken — a best practice in real-world CI/CD systems.
 
-To test rollback, intentionally break your application.
+---
+
+### **Step 3: Simulate a Failure to Trigger Rollback**
+
+To validate that the rollback works, you’ll simulate a production failure by breaking your app on purpose:
 
 ```bash
 # Break the code by adding invalid syntax
@@ -1292,79 +1484,42 @@ git commit -m "Test failure scenario (broken code)"
 git push origin main
 ```
 
-### **Observe the Pipeline**
+Now watch the GitHub Actions pipeline:
 
-* The `deploy-production` job will fail
-* The `automated-rollback` job will be triggered and run successfully
-
-### **Step 4: Revert and Fix the Code**
-
-```bash
-# Revert the broken code
-git checkout HEAD~1 app/app.py
-
-git add app/app.py
-git commit -m "Fix application after testing rollback"
-git push origin main
-```
-
-This restores the original pipeline and verifies that everything works after rollback.
+* ✅ The earlier jobs will run as normal
+* ❌ `deploy-production` will fail (due to syntax error)
+* 🔁 `automated-rollback` will automatically run and simulate a recovery
 
 ---
 
-## Final Validation and Submission
+### **Step 4: Fix the Broken Code and Restore the Pipeline**
 
-Now that your pipeline is complete, you'll finalize the exercise by documenting your work and validating that each phase was successful.
-
-### **Step 1: Document Your Results in `RESULTS.md`**
-
-Create a file in the root of your repository to summarize what you built:
+Once rollback has been tested, restore your app to a working state:
 
 ```bash
-cat <<EOF > RESULTS.md
-# CI/CD Pipeline Results
+# Revert to the last working version
+git checkout HEAD~1 app/app.py
 
-## Pipeline URL
-[Your GitHub Actions URL here]
-
-## Successful Features Implemented
-- [x] Basic CI with tests and linting
-- [x] Security scanning with vulnerability detection
-- [x] Multi-environment deployment (staging → production)
-- [x] Automated smoke tests
-- [x] Performance baseline testing
-- [x] SLO monitoring
-- [x] Automated rollback on failure
-
-## Key Metrics Achieved
-- Pipeline Duration: ~10–15 minutes
-- Security Scans: Passing
-- Test Coverage: 100%
-- Deployment Success: Verified
-
-## Lessons Learned
-1. Automated pipelines prevent human errors.
-2. Security scanning catches vulnerabilities early.
-3. Multi-environment deployment reduces production risk.
-
-## Production Readiness Assessment
-Rating: 8/10 — Would need real monitoring integration and actual Kubernetes deployment for production use.
-EOF
-```
-
-### **Step 2: Commit and Submit**
-
-```bash
-git add RESULTS.md
-git commit -m "Final results and documentation"
+git add app/app.py
+git commit -m "Fix application after rollback test"
 git push origin main
 ```
 
-To complete the exercise, submit:
+You’ll see a new pipeline run that completes successfully from start to finish — including staging, production, and the SLO check.
 
-* A link to your GitHub repository
-* A link to a successful pipeline run
-* Your completed `RESULTS.md` file
+---
+
+### What You’ve Achieved
+
+Your pipeline now includes:
+
+* Resilient multi-environment delivery
+* Observability and SLO-based validation
+* Failure handling with automatic rollback
+
+This is the **final piece** in your CI/CD puzzle — a safety net that helps teams release confidently, detect failures quickly, and recover fast.
+
+---
 
 🎉 **Done!** You've implemented a robust, automated, SRE-grade CI/CD pipeline.
 
