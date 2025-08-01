@@ -602,8 +602,6 @@ jobs:
           python scripts/evaluate-security.py
 ```
 
-💡 `|| true` allows the pipeline to continue even if the scanner exits with a non-zero code. The results will be handled and evaluated by the `evaluate-security.py` script.
-
 ### **Step 3: Commit and Test the Security Pipeline**
 
 ```bash
