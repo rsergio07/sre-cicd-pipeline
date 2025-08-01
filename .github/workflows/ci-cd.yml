@@ -154,3 +154,17 @@ jobs:
           echo "🔍 Running post-deployment verification..."
           sleep 5
           echo "✅ All systems healthy"
+
+  slo-check:
+    name: Verify SLOs
+    runs-on: ubuntu-latest
+    needs: deploy-production
+    if: always()
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check Service Level Objectives
+        run: |
+          python scripts/slo-check.py             --environment=production             --window=15min             --availability-target=99.9             --latency-target=200
