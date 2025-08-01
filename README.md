@@ -932,13 +932,19 @@ This structure mirrors how modern SRE and DevOps teams validate releases safely 
 
 ## Phase 4: Observability and Monitoring
 
-A reliable CI/CD pipeline should include observability mechanisms that validate the performance and health of the deployed service.
+Even after a successful production deployment, your job as an SRE isn’t done. You must ensure that the service remains **healthy and performant**. That’s where observability practices come in.
 
-In this phase, you'll simulate a Service Level Objective (SLO) check — a critical SRE practice — after deploying to production.
+In this phase, you’ll simulate an **SLO (Service Level Objective)** check — a critical component of post-deployment validation that helps determine whether the service is meeting user expectations.
 
-### **Step 1: Create a Script for SLO Monitoring**
+---
 
-This script will simulate checking the service’s availability and latency against defined thresholds.
+### **Step 1: Create the SLO Monitoring Script**
+
+You will now create a Python script called `slo-check.py` that simulates measuring **availability** and **latency** of the service against pre-defined thresholds.
+
+This script will be executed by the pipeline **after production deployment**, and if SLOs are not met, it will return a non-zero exit code (causing the job to fail).
+
+> Like before, we’ll use `cat <<EOF >` to generate the script, ensuring correct formatting.
 
 ```bash
 cat <<EOF > scripts/slo-check.py
@@ -953,8 +959,8 @@ def check_slo(environment, window, availability_target, latency_target):
     print(f"   Availability target: {availability_target}%")
     print(f"   Latency target: {latency_target}ms")
 
+    # Simulate real-world delay and random metrics
     time.sleep(5)
-
     current_availability = random.uniform(99.5, 99.99)
     current_latency = random.uniform(100, 300)
 
@@ -986,45 +992,69 @@ if __name__ == "__main__":
     if not success:
         exit(1)
 EOF
+```
 
+Then make the script executable:
+
+```bash
 chmod +x scripts/slo-check.py
 ```
 
-### **Step 2: Add the SLO Check Job to Your Workflow**
+---
 
-Now you’ll add a new `slo-check` job to `.github/workflows/ci-cd.yml`, which runs after `deploy-production`.
+### **Step 2: Add the SLO Check Job to Your Pipeline**
 
-This job checks if the deployed service meets the desired SLO thresholds.
+Now that you have the script ready, the next step is to **add a new job** to your GitHub Actions workflow.
+
+This job, named `slo-check`, runs **after `deploy-production`**. It verifies that the deployed service still meets your SLOs for **availability** and **latency**.
+
+Add the following block to the end of your `.github/workflows/ci-cd.yml` file:
 
 ```yaml
   slo-check:
     name: Verify SLOs
     runs-on: ubuntu-latest
     needs: deploy-production
-    if: always()
+    if: always()  # Run even if previous steps fail
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Check Service Level Objectives
-      run: |
-        python scripts/slo-check.py \
-          --environment=production \
-          --window=15min \
-          --availability-target=99.9 \
-          --latency-target=200
+      - name: Check Service Level Objectives
+        run: |
+          python scripts/slo-check.py \
+            --environment=production \
+            --window=15min \
+            --availability-target=99.9 \
+            --latency-target=200
 ```
 
-### **Step 3: Commit and Push**
+> The `if: always()` condition ensures that the SLO check runs **even if production deployment failed**, making it useful for debugging post-deploy metrics.
+
+---
+
+### **Step 3: Commit and Push the Changes**
+
+Run the following commands to add the script and update your pipeline definition:
 
 ```bash
 git add scripts/slo-check.py .github/workflows/ci-cd.yml
-git commit -m "Add SLO monitoring to pipeline"
+git commit -m "Add SLO monitoring to pipeline after production deployment"
 git push origin main
 ```
 
-Your workflow now includes a post-deployment observability phase that ensures your service meets expectations before it’s considered stable.
+---
+
+### What You’ve Accomplished
+
+Your pipeline now includes a **post-deployment observability phase** — just like in real-world SRE practice. It validates not only that the app was deployed, but also that it meets performance and reliability expectations before it’s declared stable.
+
+You’ve introduced the foundation for:
+
+* Automated reliability enforcement
+* Progressive delivery with measurable quality gates
+* Real SRE culture in CI/CD automation
 
 ---
 
