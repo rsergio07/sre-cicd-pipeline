@@ -1473,39 +1473,80 @@ This ensures that rollbacks only run when a production release is broken — a b
 
 ### **Step 3: Simulate a Failure to Trigger Rollback**
 
-To validate that the rollback works, you’ll simulate a production failure by breaking your app on purpose:
+To confirm that your automated rollback mechanism works as intended, you’ll now simulate a production deployment failure.
+
+However, it's important to understand how GitHub Actions workflows are structured:
+
+* Jobs like `test` and `security-scan` run first to ensure that only valid, secure code proceeds through the pipeline.
+* If you inject a syntax error or break the application code early, the pipeline will stop in the **test phase**, and **the deployment jobs will never be reached**.
+* As a result, the `automated-rollback` job will not be triggered because it only runs **if `deploy-production` fails** — and that job will be skipped if earlier checks fail.
+
+To accurately test rollback, we need to **allow the code to pass initial stages** and **fail specifically at the production deployment step**.
+
+---
+
+#### **Option: Simulate the Failure in the Production Deployment Step**
+
+Open `.github/workflows/ci-cd.yml` and temporarily modify the `deploy-production` job to include a forced failure.
+
+Replace this block:
+
+```yaml
+- name: Deploy to production cluster (simulated)
+  run: |
+    echo "Deploying to production environment"
+    echo "Image: ${{ needs.build.outputs.image-tag }}"
+    sleep 15
+    echo "Production deployment completed"
+```
+
+With this:
+
+```yaml
+- name: Deploy to production cluster (simulated failure)
+  run: |
+    echo "Deploying to production environment"
+    echo "Image: ${{ needs.build.outputs.image-tag }}"
+    exit 1  # Force failure to trigger rollback
+```
+
+This simulates a real deployment error, such as a failed Helm release, infrastructure issue, or crash during rollout.
+
+---
+
+#### **Step-by-Step: Test the Rollback Logic**
+
+1. Edit the file as described and commit the change:
 
 ```bash
-# Break the code by adding invalid syntax
-echo "broken code" >> app/app.py
-
-git add app/app.py
-git commit -m "Test failure scenario (broken code)"
+git add .github/workflows/ci-cd.yml
+git commit -m "Simulate production failure to trigger rollback"
 git push origin main
 ```
 
-Now watch the GitHub Actions pipeline:
+2. Open the **Actions** tab on your GitHub repository.
 
-* ✅ The earlier jobs will run as normal
-* ❌ `deploy-production` will fail (due to syntax error)
-* 🔁 `automated-rollback` will automatically run and simulate a recovery
+You should observe the following:
+
+* The `test`, `security-scan`, `build`, and `deploy-staging` jobs run successfully.
+* The `deploy-production` job fails due to the forced `exit 1` command.
+* The `automated-rollback` job is triggered automatically as a result of the failure.
+
+This allows you to verify the recovery logic in a controlled and intentional way, without needing to break earlier pipeline functionality.
 
 ---
 
 ### **Step 4: Fix the Broken Code and Restore the Pipeline**
 
-Once rollback has been tested, restore your app to a working state:
+After you've confirmed that the rollback works as expected, revert the change:
 
 ```bash
-# Revert to the last working version
-git checkout HEAD~1 app/app.py
-
-git add app/app.py
-git commit -m "Fix application after rollback test"
+git checkout HEAD~1 .github/workflows/ci-cd.yml
+git commit -m "Remove simulated failure from deploy-production"
 git push origin main
 ```
 
-You’ll see a new pipeline run that completes successfully from start to finish — including staging, production, and the SLO check.
+This will restore the normal pipeline behavior, where deployment to production is only attempted with valid and tested code.
 
 ---
 
