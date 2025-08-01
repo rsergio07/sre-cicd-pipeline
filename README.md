@@ -1006,16 +1006,172 @@ chmod +x scripts/slo-check.py
 
 Now that you have the script ready, the next step is to **add a new job** to your GitHub Actions workflow.
 
-This job, named `slo-check`, runs **after `deploy-production`**. It verifies that the deployed service still meets your SLOs for **availability** and **latency**.
+This job, named `slo-check`, runs **after `deploy-production`**. It verifies that the deployed service still meets your SLOs for **availability** and **late
 
-Add the following block to the end of your `.github/workflows/ci-cd.yml` file:
+```bash
+cat <<EOF > .github/workflows/ci-cd.yml
+name: SRE Production Pipeline
 
-```yaml
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: \${{ github.repository }}
+
+jobs:
+  test:
+    name: Run Tests and Quality Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          cd app
+          pip install -r requirements.txt
+          pip install pytest-cov black flake8
+
+      - name: Code formatting check
+        run: |
+          cd app
+          black --check .
+
+      - name: Linting
+        run: |
+          cd app
+          flake8 . --max-line-length=100
+
+      - name: Run unit tests
+        run: |
+          cd app
+          pytest --cov=. --cov-report=xml --cov-report=term
+
+  security-scan:
+    name: Security Analysis
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install security tools
+        run: |
+          pip install safety bandit
+
+      - name: Check for known vulnerabilities
+        run: |
+          cd app
+          safety check -r requirements.txt --json > safety-report.json || true
+
+      - name: Static security analysis
+        run: |
+          cd app
+          bandit -r . -f json -o bandit-report.json || true
+
+      - name: Evaluate security results
+        run: |
+          python scripts/evaluate-security.py
+
+  build:
+    name: Build and Push Image
+    runs-on: ubuntu-latest
+    needs: [test, security-scan]
+    if: github.ref == 'refs/heads/main'
+
+    outputs:
+      image-digest: \${{ steps.build.outputs.digest }}
+      image-tag: \${{ steps.meta.outputs.tags }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: \${{ env.REGISTRY }}/\${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+
+      - name: Build and push image (simulated)
+        id: build
+        run: |
+          echo "Building image for commit: \${{ github.sha }}"
+          echo "Image would be tagged as: \${{ steps.meta.outputs.tags }}"
+          echo "digest=sha256:\$(date +%s | sha256sum | cut -d' ' -f1)" >> \$GITHUB_OUTPUT
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: build
+    environment: staging
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to staging cluster (simulated)
+        run: |
+          echo "🚀 Deploying to staging environment"
+          echo "Image: \${{ needs.build.outputs.image-tag }}"
+          sleep 10
+          echo "✅ Deployment to staging completed"
+
+      - name: Run smoke tests
+        run: |
+          python scripts/smoke-tests.py --environment=staging
+
+      - name: Performance baseline test
+        run: |
+          python scripts/performance-test.py --duration=30 --environment=staging
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [build, deploy-staging]
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to production cluster (simulated)
+        run: |
+          echo "🚀 Deploying to production environment"
+          echo "Image: \${{ needs.build.outputs.image-tag }}"
+          sleep 15
+          echo "✅ Production deployment completed"
+
+      - name: Post-deployment verification
+        run: |
+          echo "🔍 Running post-deployment verification..."
+          sleep 5
+          echo "✅ All systems healthy"
+
   slo-check:
     name: Verify SLOs
     runs-on: ubuntu-latest
     needs: deploy-production
-    if: always()  # Run even if previous steps fail
+    if: always()
 
     steps:
       - name: Checkout code
@@ -1028,10 +1184,8 @@ Add the following block to the end of your `.github/workflows/ci-cd.yml` file:
             --window=15min \
             --availability-target=99.9 \
             --latency-target=200
+EOF
 ```
-
-> The `if: always()` condition ensures that the SLO check runs **even if production deployment failed**, making it useful for debugging post-deploy metrics.
-
 ---
 
 ### **Step 3: Commit and Push the Changes**
