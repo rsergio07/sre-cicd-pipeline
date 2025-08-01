@@ -926,7 +926,7 @@ Once your pipeline runs:
 3. The app is deployed to a staging environment, where smoke and performance tests are run
 4. If staging passes, it’s promoted to production for final verification
 
-This structure mirrors how modern SRE and DevOps teams validate releases safely and reliably.
+This structure mirrors how modern SRE teams validate releases safely and reliably.
 
 ---
 
