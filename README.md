@@ -434,8 +434,10 @@ These quality gates ensure that code changes are secure and meet best practices 
 This script evaluates the results of `safety` and `bandit`, which check for known vulnerabilities and insecure coding patterns. If any critical issues are found, the script will fail the pipeline.
 
 ```bash
+# Step 1: Create the scripts directory
 mkdir scripts
 
+# Step 2: Write the security evaluation script
 cat <<EOF > scripts/evaluate-security.py
 #!/usr/bin/env python3
 import json
@@ -480,6 +482,7 @@ if __name__ == "__main__":
     evaluate_security_results()
 EOF
 
+# Step 3: Make the script executable
 chmod +x scripts/evaluate-security.py
 ```
 
