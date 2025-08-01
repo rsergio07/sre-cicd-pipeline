@@ -621,15 +621,32 @@ Both should pass, unless a critical vulnerability is detected.
 
 ## Phase 3: Multi-Environment Deployment
 
-A production-ready pipeline should support multiple environments such as `staging` and `production`. In this phase, you will simulate deploying your application to both environments after passing tests and security scans.
+A production-grade pipeline doesn’t stop after running tests and scanning for security issues. It must support **progressive delivery** through multiple environments (like `staging` and `production`), ensuring reliability at every stage.
 
-We’ll also simulate smoke and performance tests to ensure deployments are healthy before promoting them forward.
+In this phase, we’ll simulate this using three additional jobs in the pipeline:
+
+* `build`: Generates a container image (simulated)
+* `deploy-staging`: Deploys the app to a staging environment and runs verification tests
+* `deploy-production`: Deploys the app to a production environment if staging passes
+
+But before we can automate these deployments, we need test scripts to verify that each environment is healthy. That’s where our work begins.
+
+---
 
 ### **Step 1: Create Helper Scripts for Validation**
 
-These Python scripts simulate realistic verification of deployed services.
+In this step, you’ll generate two Python scripts:
+
+* `smoke-tests.py`: Simulates verifying the application's health and basic functionality after a deployment.
+* `performance-test.py`: Simulates performance testing by generating random latency metrics for a specified duration.
+
+These scripts will later be executed automatically as part of the `deploy-staging` and `deploy-production` jobs in the pipeline.
+
+> You’ll use the `cat <<EOF > filename.py` method to write each script to disk. This technique ensures proper formatting and avoids manual indentation errors.
 
 #### `scripts/smoke-tests.py`
+
+This script simulates basic health checks and API verification.
 
 ```bash
 cat <<EOF > scripts/smoke-tests.py
@@ -669,7 +686,11 @@ if __name__ == "__main__":
 EOF
 ```
 
+---
+
 #### `scripts/performance-test.py`
+
+This script simulates a performance test by printing randomized latency numbers for a given duration.
 
 ```bash
 cat <<EOF > scripts/performance-test.py
@@ -696,23 +717,118 @@ if __name__ == "__main__":
 EOF
 ```
 
+---
+
+### Make the scripts executable
+
+Once both scripts have been created, make sure they are executable by the CI runner:
+
 ```bash
 chmod +x scripts/*.py
 ```
 
+This step is required so that GitHub Actions can run the scripts without permission errors during the `deploy-staging` and `deploy-production` jobs.
+
+---
+
 ### **Step 2: Add Build and Deployment Jobs to the Pipeline**
 
-Now, update `.github/workflows/ci-cd.yml` with three new jobs:
+Now that your validation scripts are in place, it’s time to expand your `.github/workflows/ci-cd.yml` file to simulate:
 
-* `build`: Simulates container image creation
-* `deploy-staging`: Simulates deploying to a staging environment
-* `deploy-production`: Simulates promoting to production
+* Building the application (with metadata and digests)
+* Deploying to a `staging` environment
+* Running smoke and performance tests in staging
+* Promoting to a `production` environment once staging passes
 
-Each job will depend on the previous one to enforce a gated flow.
+Each of these jobs is gated by the previous one using the `needs:` keyword — this creates a reliable, test-driven release flow.
 
-#### Add the `build` job:
+By chaining these jobs together, you’re simulating a **progressive delivery model**, where code must pass increasing levels of scrutiny before reaching production.
 
-```yaml
+---
+
+#### Add the pipeline jobs using this command:
+
+```bash
+cat <<EOF > .github/workflows/ci-cd.yml
+name: SRE Production Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: \${{ github.repository }}
+
+jobs:
+  test:
+    name: Run Tests and Quality Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          cd app
+          pip install -r requirements.txt
+          pip install pytest-cov black flake8
+
+      - name: Code formatting check
+        run: |
+          cd app
+          black --check .
+
+      - name: Linting
+        run: |
+          cd app
+          flake8 . --max-line-length=100
+
+      - name: Run unit tests
+        run: |
+          cd app
+          pytest --cov=. --cov-report=xml --cov-report=term
+
+  security-scan:
+    name: Security Analysis
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install security tools
+        run: |
+          pip install safety bandit
+
+      - name: Check for known vulnerabilities
+        run: |
+          cd app
+          safety check -r requirements.txt --json > safety-report.json || true
+
+      - name: Static security analysis
+        run: |
+          cd app
+          bandit -r . -f json -o bandit-report.json || true
+
+      - name: Evaluate security results
+        run: |
+          python scripts/evaluate-security.py
+
   build:
     name: Build and Push Image
     runs-on: ubuntu-latest
@@ -720,33 +836,29 @@ Each job will depend on the previous one to enforce a gated flow.
     if: github.ref == 'refs/heads/main'
 
     outputs:
-      image-digest: ${{ steps.build.outputs.digest }}
-      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: \${{ steps.build.outputs.digest }}
+      image-tag: \${{ steps.meta.outputs.tags }}
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Extract metadata
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-        tags: |
-          type=ref,event=branch
-          type=sha,prefix={{branch}}-
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: \${{ env.REGISTRY }}/\${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
 
-    - name: Build and push image (simulated)
-      id: build
-      run: |
-        echo "Building image for commit: ${{ github.sha }}"
-        echo "Image would be tagged as: ${{ steps.meta.outputs.tags }}"
-        echo "digest=sha256:$(date +%s | sha256sum | cut -d' ' -f1)" >> $GITHUB_OUTPUT
-```
+      - name: Build and push image (simulated)
+        id: build
+        run: |
+          echo "Building image for commit: \${{ github.sha }}"
+          echo "Image would be tagged as: \${{ steps.meta.outputs.tags }}"
+          echo "digest=sha256:\$(date +%s | sha256sum | cut -d' ' -f1)" >> \$GITHUB_OUTPUT
 
-#### Add the `deploy-staging` job:
-
-```yaml
   deploy-staging:
     name: Deploy to Staging
     runs-on: ubuntu-latest
@@ -754,28 +866,24 @@ Each job will depend on the previous one to enforce a gated flow.
     environment: staging
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Deploy to staging cluster (simulated)
-      run: |
-        echo "🚀 Deploying to staging environment"
-        echo "Image: ${{ needs.build.outputs.image-tag }}"
-        sleep 10
-        echo "✅ Deployment to staging completed"
+      - name: Deploy to staging cluster (simulated)
+        run: |
+          echo "🚀 Deploying to staging environment"
+          echo "Image: \${{ needs.build.outputs.image-tag }}"
+          sleep 10
+          echo "✅ Deployment to staging completed"
 
-    - name: Run smoke tests
-      run: |
-        python scripts/smoke-tests.py --environment=staging
+      - name: Run smoke tests
+        run: |
+          python scripts/smoke-tests.py --environment=staging
 
-    - name: Performance baseline test
-      run: |
-        python scripts/performance-test.py --duration=30 --environment=staging
-```
+      - name: Performance baseline test
+        run: |
+          python scripts/performance-test.py --duration=30 --environment=staging
 
-#### Add the `deploy-production` job:
-
-```yaml
   deploy-production:
     name: Deploy to Production
     runs-on: ubuntu-latest
@@ -783,24 +891,27 @@ Each job will depend on the previous one to enforce a gated flow.
     environment: production
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Deploy to production cluster (simulated)
-      run: |
-        echo "🚀 Deploying to production environment"
-        echo "Image: ${{ needs.build.outputs.image-tag }}"
-        sleep 15
-        echo "✅ Production deployment completed"
+      - name: Deploy to production cluster (simulated)
+        run: |
+          echo "🚀 Deploying to production environment"
+          echo "Image: \${{ needs.build.outputs.image-tag }}"
+          sleep 15
+          echo "✅ Production deployment completed"
 
-    - name: Post-deployment verification
-      run: |
-        echo "🔍 Running post-deployment verification..."
-        sleep 5
-        echo "✅ All systems healthy"
+      - name: Post-deployment verification
+        run: |
+          echo "🔍 Running post-deployment verification..."
+          sleep 5
+          echo "✅ All systems healthy"
+EOF
 ```
 
 ### **Step 3: Commit and Run the Full Pipeline**
+
+Now that you’ve written the test scripts and defined the new deployment jobs, commit and push your changes:
 
 ```bash
 git add scripts/smoke-tests.py scripts/performance-test.py .github/workflows/ci-cd.yml
@@ -808,14 +919,14 @@ git commit -m "Add multi-environment deployment pipeline"
 git push origin main
 ```
 
-Once pushed, your pipeline will include:
+Once your pipeline runs:
 
-1. Code validation (tests and security)
-2. Build
-3. Deploy to Staging + Tests
-4. Deploy to Production
+1. Code is tested and scanned for security
+2. A container image is simulated and metadata is generated
+3. The app is deployed to a staging environment, where smoke and performance tests are run
+4. If staging passes, it’s promoted to production for final verification
 
-Each stage simulates a real CI/CD progression with validation gates.
+This structure mirrors how modern SRE and DevOps teams validate releases safely and reliably.
 
 ---
 
