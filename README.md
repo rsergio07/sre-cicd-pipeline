@@ -485,9 +485,38 @@ chmod +x scripts/evaluate-security.py
 
 ### **Step 2: Add the Security Scan Job to Your Workflow**
 
-Now update the `.github/workflows/ci-cd.yml` file to include a new job called `security-scan`. This job runs only after the `test` job completes successfully.
+Now that you’ve established a baseline for testing and code quality, it's time to integrate **security scanning** into your CI/CD pipeline.
 
-Replace the entire file with the code below:
+In this step, you'll add a new job named `security-scan` to your GitHub Actions workflow. This job will run **only if the `test` job passes**, ensuring that only tested and syntactically valid code is scanned for security issues.
+
+---
+
+#### Why is this important?
+
+As an SRE or DevSecOps engineer, your responsibility doesn't end at passing tests — you also need to prevent insecure code from reaching production. This security job helps you:
+
+* **Catch known vulnerabilities** in your Python dependencies using [Safety](https://github.com/pyupio/safety)
+* **Perform static analysis** on your code using [Bandit](https://bandit.readthedocs.io/) to find insecure coding practices (e.g., use of `eval`, hardcoded passwords, etc.)
+* **Fail the pipeline automatically** if critical issues are found
+
+Adding this stage ensures that **security becomes a default part of your development lifecycle**, not an afterthought.
+
+---
+
+### What you'll do:
+
+* Add a new `security-scan` job to your pipeline
+* Ensure it depends on the successful completion of the `test` job
+* Automate security evaluations with `safety` and `bandit`
+* Use a helper script to fail the job if critical vulnerabilities are detected
+
+---
+
+### Next step:
+
+Update the `.github/workflows/ci-cd.yml` file to include the `security-scan` job. Replace the entire file with the updated version provided below.
+
+> 🔒 Security should never be optional in a modern pipeline — this job enforces that principle automatically.
 
 ```yaml
 name: SRE Production Pipeline
