@@ -1536,17 +1536,22 @@ This allows you to verify the recovery logic in a controlled and intentional way
 
 ---
 
-### **Step 4: Fix the Broken Code and Restore the Pipeline**
+### **Step 4: Revert and Fix the Code**
 
-After you've confirmed that the rollback works as expected, revert the change:
+Although the rollback job ran successfully, it did **not** actually fix the broken code. You need to manually restore the application to a working state so future pipeline runs can succeed.
+
+> **Note:** The rollback job only simulates recovery — it does not revert files in your Git repository. Real pipelines would require integration with deployment tools or GitOps workflows to perform automatic rollbacks.
+
+#### Revert the entire commit
+
+To undo everything added in the previous commit (including a broken pipeline):
 
 ```bash
-git checkout HEAD~1 .github/workflows/ci-cd.yml
-git commit -m "Remove simulated failure from deploy-production"
+git revert HEAD
 git push origin main
 ```
 
-This will restore the normal pipeline behavior, where deployment to production is only attempted with valid and tested code.
+This creates a new commit that reverses the last one.
 
 ---
 
